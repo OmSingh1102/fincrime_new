@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_modals.html" import confirm_dialog %}
+{% block title %}Upload cases - Due Diligence (KYC/KYB){% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Upload cases</h2>
+        <p>New onboarding cases as a CSV in the reconciliation log's layout, one row per case. Each row becomes a case at L1 Data Confirming with its World-Check hit and goes through the same steps as the file's cases: the AI screening rules run at once, and the cases they clear (auto-verified) are read by the AI Agent{% if not agent_ready %} — which needs LLM_FOUNDRY_KEY, so here they wait for an analyst{% endif %}, which verifies them when every check passes. Everything else goes to the analysts.</p></div>
+</div>
+
+<div class="card mt-12">
+    <div class="card-body">
+        <form method="post" action="{{ url_for('kyc_upload') }}" enctype="multipart/form-data" id="upload-form" class="row" style="gap:12px;flex-wrap:wrap;align-items:center"
+              onsubmit="var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='Uploading…'">
+            <input class="input" type="file" name="file" accept=".csv,text/csv" required style="max-width:420px">
+            <button type="submit" class="btn btn-primary btn-sm">{{ icon('upload') }} Upload</button>
+            <a class="btn btn-outline btn-sm" href="{{ url_for('kyc_upload_sample') }}">{{ icon('download') }} Download a sample (5 new cases)</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('kyc_list') }}">Back to the case list</a>
+        </form>
+        <p class="small muted mt-12">Up to {{ max_rows }} cases per file, saved as CSV UTF-8. A case id that already exists is skipped. The sample holds two cases the AI Agent should verify by itself, one whose CRM spells the surname another way than the documents (it goes to an analyst), an exact date-of-birth hit and a company (both the analysts' from the start). The document images are drawn from each row's data; capture defects are drawn per case, as for the file.</p>
+    </div>
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Columns</div><div class="card-sub">header names as in the reconciliation log; case and spacing do not matter</div></div>
+    <div class="card-body" style="padding-top:0">
+        <p class="small"><b>Required ({{ columns|length }}):</b> {% for c in columns %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+        <p class="small muted"><b>Optional</b> — what an analyst decided, which a new case does not have yet: {% for c in optional %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+    </div>
+</div>
+
+{% if batches %}
+<div class="card mt-12 pad-0" id="upload-history">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Uploads</div><div class="card-sub">kept until removed here, or Reset demo</div></div>
+    <table class="tbl dense">
+        <thead><tr><th>File</th><th>By</th><th>At</th><th class="num">Cases</th><th>Case ids</th><th></th></tr></thead>
+        <tbody>
+        {% for b in batches %}
+        <tr{% if b.removed_at %} class="muted"{% endif %}><td>{{ b.file }}</td><td>{{ b.by|who if b.by else '—' }}</td><td class="nowrap small">{{ b.at }}</td><td class="num">{{ b.cases|length }}</td>
+            <td class="small">{% for cid in b.cases[:8] %}{% if b.removed_at %}<span class="mono">{{ cid }}</span>{% else %}<a class="link mono" href="{{ url_for('kyc_detail', case_id=cid) }}">{{ cid }}</a>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% if b.cases|length > 8 %} … {{ b.cases|length - 8 }} more{% endif %}</td>
+            <td class="nowrap">{% if b.removed_at %}<span class="small">Removed by {{ b.removed_by|who }} · {{ b.removed_at }}</span>
+                {% else %}<button type="button" class="btn btn-outline btn-sm" id="remove-upload-{{ loop.index }}" onclick="openModal('remove-dialog-{{ loop.index }}')">Remove</button>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% for b in batches if not b.removed_at %}
+{{ confirm_dialog('remove-dialog-' ~ loop.index, 'Remove this upload?',
+                  'This removes the ' ~ (b.cases|length) ~ ' case(s) uploaded from ' ~ b.file ~ ', with everything done on them: the AI Agent\'s reads, screening outcomes and any analyst\'s work. It cannot be undone; upload the file again to bring the cases back.',
+                  url_for('kyc_upload_remove', batch_id=b.id), ok='Remove') }}
+{% endfor %}
+{% endif %}
+{% endblock %}
